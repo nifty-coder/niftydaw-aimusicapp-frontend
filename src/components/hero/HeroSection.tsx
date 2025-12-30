@@ -60,14 +60,19 @@ export function HeroSection() {
     setUploadProgress(0);
 
     const interval = setInterval(() => {
-      setUploadProgress((p) => Math.min(90, Math.floor(p + Math.random() * 10 + 5)));
-    }, 250);
+      // Slower progress: ~0.4% per second -> reaches ~90% in ~4 minutes
+      setUploadProgress((p) => {
+        if (p >= 90) return 90;
+        return Math.min(90, p + (Math.random() * 0.5 + 0.2));
+      });
+    }, 1000);
 
     try {
       await addAudioFile(selectedFile, tosAgreed);
       setUploadProgress(100);
       toast({ title: 'Success', description: 'Audio file analyzed and added to library.' });
       setSelectedFile(null); // Clear selection on success
+      window.location.reload();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast({ title: 'Error', description: msg, variant: 'destructive' });
@@ -168,7 +173,7 @@ export function HeroSection() {
                     {uploadLoading ? (
                       <>
                         <Sparkles className="w-5 h-5 mr-2 animate-spin" />
-                        Processing
+                        Analyzing
                       </>
                     ) : (
                       <>
@@ -183,8 +188,8 @@ export function HeroSection() {
                 {uploadLoading && (
                   <div className="w-full space-y-2 animate-in fade-in">
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Processing {selectedFile?.name}...</span>
-                      <span>{uploadProgress}%</span>
+                      <span>Analyzing {selectedFile?.name}...</span>
+                      <span>{Math.round(uploadProgress)}%</span>
                     </div>
                     <div className="h-1.5 w-full bg-secondary/50 rounded-full overflow-hidden">
                       <div
@@ -255,10 +260,17 @@ export function HeroSection() {
               </div>
             </div>
 
-            {/* Warning / Note */}
-            <div className="flex items-center justify-center gap-2 text-sm text-yellow-500/80 bg-yellow-500/10 p-3 rounded-lg border border-yellow-500/20">
-              <AlertCircle className="w-4 h-4" />
-              <span>Uploaded files are private and only accessible to you.</span>
+            {/* Disclaimer & Warning */}
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-center gap-2 text-sm text-yellow-500/80 bg-yellow-500/10 p-3 rounded-lg border border-yellow-500/20">
+                <AlertCircle className="w-4 h-4" />
+                <span>Uploaded files are private and only accessible to you.</span>
+              </div>
+
+              <div className="text-sm text-muted-foreground text-center max-w-lg mx-auto leading-relaxed">
+                <strong>Note:</strong> AI generation may not always be 100% accurate.
+                Analyzing high-quality files may take up to 5 minutes.
+              </div>
             </div>
 
           </div>
