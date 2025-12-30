@@ -91,10 +91,12 @@ export function HeroSection() {
 
         <div className="space-y-6 animate-fade-in">
           <div className="flex items-center justify-center gap-3 mb-6">
-            <div className="p-3 rounded-full bg-gradient-primary">
-              <Music className="w-8 h-8 text-primary-foreground" />
-            </div>
-            <h1 className="text-3xl md:text-4xl lg:text-6xl font-bold bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+            <img
+              src="/stemsplit-logo.png"
+              alt="StemSplit Logo"
+              className="w-18 h-16 object-contain"
+            />
+            <h1 className="text-3xl md:text-4xl lg:text-6xl font-bold">
               StemSplit
             </h1>
           </div>

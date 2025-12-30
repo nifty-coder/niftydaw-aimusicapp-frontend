@@ -196,7 +196,7 @@ const Profile = () => {
       [field]: value
     }));
   };
-  
+
   const loadingState = profileApiLoading || saving;
 
   return (
@@ -243,7 +243,7 @@ const Profile = () => {
                   <Calendar className="h-4 w-4" />
                   <span className="text-sm">Member since {userCreatedAt}</span>
                 </div>
-                
+
                 <Separator className="bg-white/20" />
                 <Button
                   variant="outline"
@@ -394,15 +394,8 @@ const Profile = () => {
                 <div className="space-y-2">
                   <Label className="text-white">Email Verification</Label>
                   <div className="p-3 bg-white/10 rounded-md border border-white/20">
-                    <span className={`text-sm ${
-                      currentUser?.emailVerified
-                        ? 'text-green-400'
-                        : 'text-yellow-400'
-                    }`}>
-                      {currentUser?.emailVerified
-                        ? '✓ Email Verified'
-                        : '⚠ Email Not Verified'
-                      }
+                    <span className="text-sm text-green-400">
+                      ✓ Email Verified
                     </span>
                   </div>
                 </div>

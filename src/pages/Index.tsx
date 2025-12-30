@@ -32,11 +32,26 @@ const Index = () => {
         </div>
       )}
 
-      <div className="flex-1 relative">
+      <div className="flex-1 relative flex flex-col">
         <div className="absolute top-4 right-4 z-10">
           <UserProfile />
         </div>
         <HeroSection />
+
+        {/* Footer */}
+        <footer className="py-4 text-center text-sm text-muted-foreground border-t border-border/30 bg-background/50 backdrop-blur-sm">
+          <p>
+            A product by{' '}
+            <a
+              href="https://niftysoftsol.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline font-medium"
+            >
+              Nifty Software Solutions
+            </a>
+          </p>
+        </footer>
       </div>
     </div>
   );
