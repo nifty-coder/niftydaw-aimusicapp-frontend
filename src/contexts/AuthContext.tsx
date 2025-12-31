@@ -41,19 +41,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const signUp = async (email: string, password: string) => {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    try {
-      // Clear client-side music library for brand new accounts
-      // Keep in sync with useMusicLibrary.STORAGE_KEY
-      localStorage.removeItem('music-analyzer-library');
-    } catch (e) {
-      // noop
+    const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+    const res = await fetch(`${base}/api/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.detail || 'Signup failed');
     }
-    return userCredential;
+
+    const data = await res.json();
+    return data;
   };
 
   const signIn = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    if (!cred.user.emailVerified) {
+      await signOut(auth);
+      throw new Error('Email not verified. Please check your inbox.');
+    }
   };
 
   const logout = async () => {
@@ -62,12 +71,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    
+
     // Add custom parameters for better error handling
     provider.setCustomParameters({
       prompt: 'select_account'
     });
-    
+
     try {
       const cred = await signInWithPopup(auth, provider);
       // If this is a newly created user via Google, clear any existing local library
@@ -83,7 +92,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Check for specific OAuth configuration errors
       const errorCode = err?.code;
       const errorMessage = err?.message || '';
-      
+
       // Provide helpful error messages for common OAuth issues
       if (errorCode === 'auth/unauthorized-domain' || errorMessage.includes('invalid') || errorMessage.includes('blocked')) {
         const currentDomain = window.location.hostname;
@@ -116,11 +125,11 @@ To fix this:
      * http://localhost:8080 (for local dev)
      * https://${currentDomain} (for production)
         `.trim();
-        
+
         console.error(helpfulMessage);
         throw new Error(helpfulMessage);
       }
-      
+
       // Some hosting environments / browser policies (Cross-Origin-Opener-Policy/Cross-Origin-Embedder-Policy)
       // can block popup usage. Fall back to redirect flow in that case.
       if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/popup-closed-by-user') {
@@ -133,7 +142,7 @@ To fix this:
         }
         return null;
       }
-      
+
       // Re-throw other errors
       throw err;
     }

@@ -24,7 +24,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSwitchToLogin }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (password !== confirmPassword) {
       toast({
         title: 'Error',
@@ -48,10 +48,10 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSwitchToLogin }) => {
     try {
       await signUp(email, password);
       toast({
-        title: 'Success',
-        description: 'Account created successfully!',
+        title: 'Check your email',
+        description: 'We sent you an activation link. It is valid for 15 minutes.',
       });
-      navigate('/');
+      onSwitchToLogin();
     } catch (error: any) {
       toast({
         title: 'Error',

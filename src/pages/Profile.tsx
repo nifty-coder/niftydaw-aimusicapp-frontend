@@ -180,7 +180,7 @@ const Profile = () => {
         title: 'Success',
         description: 'Successfully logged out!',
       });
-      navigate('/login'); // Redirect after logout
+      navigate('/auth'); // Redirect after logout
     } catch (error: any) {
       toast({
         title: 'Error',
