@@ -295,7 +295,7 @@ export function HeroSection() {
                       })}
                     </div>
                     {selectedStems.length === 0 && (
-                      <p className="text-[10px] text-destructive flex items-center gap-1 animate-pulse">
+                      <p className="text-sm text-destructive flex items-center gap-1">
                         <AlertCircle className="w-3 h-3" />
                         Please select at least one stem.
                       </p>

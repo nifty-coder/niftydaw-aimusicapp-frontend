@@ -108,19 +108,36 @@ export function MusicLibraryProvider({ children }: { children: ReactNode }) {
                             }
                         });
 
-                        const sorted = [...merged].sort((a, b) => b.addedAt.getTime() - a.addedAt.getTime());
+                        // Robust sort by addedAt (most recent first)
+                        const sorted = [...merged].sort((a, b) => {
+                            const timeA = a.addedAt instanceof Date ? a.addedAt.getTime() : new Date(a.addedAt).getTime();
+                            const timeB = b.addedAt instanceof Date ? b.addedAt.getTime() : new Date(b.addedAt).getTime();
+                            return (timeB || 0) - (timeA || 0);
+                        });
                         setUrls(sorted);
                     } else {
-                        const sorted = [...localUrls].sort((a, b) => b.addedAt.getTime() - a.addedAt.getTime());
+                        const sorted = [...localUrls].sort((a, b) => {
+                            const timeA = a.addedAt instanceof Date ? a.addedAt.getTime() : new Date(a.addedAt).getTime();
+                            const timeB = b.addedAt instanceof Date ? b.addedAt.getTime() : new Date(b.addedAt).getTime();
+                            return (timeB || 0) - (timeA || 0);
+                        });
                         setUrls(sorted);
                     }
                 } catch (e) {
                     console.warn('Failed to load R2 songs:', e);
-                    const sorted = [...localUrls].sort((a, b) => b.addedAt.getTime() - a.addedAt.getTime());
+                    const sorted = [...localUrls].sort((a, b) => {
+                        const timeA = a.addedAt instanceof Date ? a.addedAt.getTime() : new Date(a.addedAt).getTime();
+                        const timeB = b.addedAt instanceof Date ? b.addedAt.getTime() : new Date(b.addedAt).getTime();
+                        return (timeB || 0) - (timeA || 0);
+                    });
                     setUrls(sorted);
                 }
             } else {
-                const sorted = [...localUrls].sort((a, b) => b.addedAt.getTime() - a.addedAt.getTime());
+                const sorted = [...localUrls].sort((a, b) => {
+                    const timeA = a.addedAt instanceof Date ? a.addedAt.getTime() : new Date(a.addedAt).getTime();
+                    const timeB = b.addedAt instanceof Date ? b.addedAt.getTime() : new Date(b.addedAt).getTime();
+                    return (timeB || 0) - (timeA || 0);
+                });
                 setUrls(sorted);
             }
         } catch (e) {
@@ -145,7 +162,9 @@ export function MusicLibraryProvider({ children }: { children: ReactNode }) {
                     files: u.files ? u.files.map(f => ({ filename: f.filename })) : undefined
                 }));
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
-            } else {
+            } else if (urls.length === 0 && isInitialized) {
+                // Only remove if we intentionally want an empty library (e.g. after clearLibrary)
+                // If it's empty but we're about to load, this doesn't run because of line 140
                 localStorage.removeItem(STORAGE_KEY);
             }
         } catch (e) { }
