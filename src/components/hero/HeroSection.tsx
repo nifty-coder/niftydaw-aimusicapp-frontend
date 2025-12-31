@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { useMusicLibrary } from "@/hooks/useMusicLibrary";
 import { useToast } from "@/hooks/use-toast";
 import { Volume2 } from "lucide-react";
+import { auth } from "@/lib/firebase";
 
 export function HeroSection() {
   const { addAudioFile, isLoading } = useMusicLibrary();
@@ -53,6 +54,17 @@ export function HeroSection() {
 
     if (!tosAgreed) {
       toast({ title: 'Terms of Service', description: 'You must agree to the Terms of Service before analyzing.', variant: 'destructive' });
+      return;
+    }
+
+    // Check if user is authenticated (required for R2 storage)
+    const user = auth.currentUser;
+    if (!user) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please log in to upload and process audio files.',
+        variant: 'destructive'
+      });
       return;
     }
 

@@ -30,7 +30,7 @@ export function MusicSidebar({ onUrlSelect }: MusicSidebarProps) {
   const [playingKeys, setPlayingKeys] = useState<Set<string>>(new Set());
   const [currentTimes, setCurrentTimes] = useState<Record<string, number>>({});
   const [durations, setDurations] = useState<Record<string, number>>({});
-  const { urls, removeMusicUrl, clearLibrary, updateMusicTitle, scheduleRemoveMusicUrl, undoRemoveMusicUrl, scheduleClearLibrary, undoClearLibrary } = useMusicLibrary();
+  const { urls, removeMusicUrl, clearLibrary, updateMusicTitle, scheduleRemoveMusicUrl, undoRemoveMusicUrl, scheduleClearLibrary, undoClearLibrary, getPresignedUrl } = useMusicLibrary();
   const { toast } = useToast();
 
   // Auto-refresh caches when library changes
@@ -94,7 +94,16 @@ export function MusicSidebar({ onUrlSelect }: MusicSidebarProps) {
 
       // Create and play new audio
       let srcUrl: string | null = null;
-      if (f.blobUrl) {
+
+      // Check if this is an R2-stored file (has song_id)
+      if (musicUrl.song_id && !f.blobUrl) {
+        try {
+          srcUrl = await getPresignedUrl(musicUrl.song_id, f.filename);
+        } catch (error) {
+          console.error('Failed to get presigned URL:', error);
+          throw new Error('Failed to load audio file. Please try again.');
+        }
+      } else if (f.blobUrl) {
         srcUrl = f.blobUrl;
       } else if (musicUrl.cacheKey) {
         srcUrl = `${apiBase}/stems/${musicUrl.cacheKey}/${f.filename}`;
@@ -181,7 +190,21 @@ export function MusicSidebar({ onUrlSelect }: MusicSidebarProps) {
     setDownloadControllers(prev => ({ ...prev, [key]: controller }));
     setDownloading(prev => ({ ...prev, [key]: true }));
     try {
-      if (f.blobUrl) {
+      // Check if this is an R2-stored file (has song_id)
+      if (musicUrl.song_id && !f.blobUrl) {
+        try {
+          const presignedUrl = await getPresignedUrl(musicUrl.song_id, f.filename);
+          const a = document.createElement('a');
+          a.href = presignedUrl;
+          a.download = f.filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        } catch (error) {
+          console.error('Failed to get presigned URL for download:', error);
+          throw new Error('Failed to download file. Please try again.');
+        }
+      } else if (f.blobUrl) {
         const a = document.createElement('a');
         a.href = f.blobUrl;
         a.download = f.filename;
