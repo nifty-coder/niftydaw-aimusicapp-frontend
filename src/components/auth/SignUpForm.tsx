@@ -162,7 +162,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSwitchToLogin }) => {
           </Button>
         </form>
 
-        {/* <div className="relative">
+        <div className="relative">
           <div className="absolute inset-0 flex items-center">
             <Separator className="w-full" />
           </div>
@@ -170,8 +170,8 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSwitchToLogin }) => {
             <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
           </div>
         </div>
- */}
-        {/* <Button
+
+        <Button
           variant="outline"
           type="button"
           className="w-full"
@@ -198,7 +198,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onSwitchToLogin }) => {
             />
           </svg>
           Google
-        </Button> */}
+        </Button>
 
         <div className="text-center text-sm">
           Already have an account?{' '}

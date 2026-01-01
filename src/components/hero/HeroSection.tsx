@@ -110,12 +110,12 @@ export function HeroSection() {
         <div className="space-y-6 animate-fade-in">
           <div className="flex items-center justify-center gap-3 mb-6">
             <img
-              src="/stemsplit-logo.png"
-              alt="StemSplit Logo"
+              src="/SplitSonic-logo.png"
+              alt="SplitSonic Logo"
               className="w-18 h-16 object-contain"
             />
             <h1 className="text-3xl md:text-4xl lg:text-6xl font-bold">
-              StemSplit
+              SplitSonic
             </h1>
           </div>
 
@@ -340,7 +340,7 @@ export function HeroSection() {
                             </p>
                             <p>
                               <strong>2. Usage Rights</strong><br />
-                              By uploading, you grant StemSplit a temporary license to process your file solely for the purpose of separation. We do not claim ownership of your content.
+                              By uploading, you grant SplitSonic a temporary license to process your file solely for the purpose of separation. We do not claim ownership of your content.
                             </p>
                             <p>
                               <strong>3. Data Retention</strong><br />
