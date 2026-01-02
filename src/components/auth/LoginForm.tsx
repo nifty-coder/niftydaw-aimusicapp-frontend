@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +21,22 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignUp }) => {
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Handle errors passed via URL (e.g. from GoogleAuthVerify)
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error) {
+      toast({
+        title: 'Authentication Error',
+        description: error,
+        variant: 'destructive',
+      });
+      // Clear the error from the URL
+      searchParams.delete('error');
+      setSearchParams(searchParams);
+    }
+  }, [searchParams, setSearchParams, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,17 +60,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignUp }) => {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    try {
-      await signInWithGoogle();
-      toast({ title: 'Success', description: 'Successfully signed in with Google!' });
-      navigate('/');
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to sign in with Google', variant: 'destructive' });
-    } finally {
-      setLoading(false);
-    }
+  const handleGoogleSignIn = () => {
+    navigate('/google-auth-verify');
   };
 
   return (

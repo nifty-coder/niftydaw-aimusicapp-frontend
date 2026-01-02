@@ -2,28 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 
-export interface MusicLayer {
-    id: string;
-    name: string;
-    icon: string;
-    volume: number;
-}
-
-export interface MusicUrl {
-    id: string;
-    url: string;
-    title: string;
-    thumbnail: string;
-    addedAt: Date;
-    layers: MusicLayer[];
-    isLocalFile?: boolean;
-    fileDataUrl?: string | null;
-    files?: { filename: string; blobUrl: string }[];
-    cacheKey?: string;
-    processed?: boolean;
-    song_id?: string;
-    uid?: string;
-}
+import { MusicLayer, MusicUrl } from "@/types/music";
 
 interface MusicLibraryContextType {
     urls: MusicUrl[];
@@ -46,7 +25,7 @@ interface MusicLibraryContextType {
     handlePlayAll: (musicUrl: any) => Promise<void>;
 }
 
-const MusicLibraryContext = createContext<MusicLibraryContextType | undefined>(undefined);
+export const MusicLibraryContext = createContext<MusicLibraryContextType | undefined>(undefined);
 
 const STORAGE_KEY = "music-analyzer-library";
 
@@ -79,10 +58,11 @@ export function MusicLibraryProvider({ children }: { children: ReactNode }) {
                 }));
 
                 // Filter by UID to prevent leakage between accounts
+                // Also ensure we don't load R2 files from storage (they must come from API)
                 if (currentUser) {
-                    localUrls = localUrls.filter(u => !u.uid || u.uid === currentUser.uid);
+                    localUrls = localUrls.filter(u => (!u.uid || u.uid === currentUser.uid) && u.isLocalFile !== false);
                 } else {
-                    localUrls = localUrls.filter(u => !u.uid);
+                    localUrls = localUrls.filter(u => !u.uid && u.isLocalFile !== false);
                 }
             }
 
@@ -174,15 +154,18 @@ export function MusicLibraryProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (!isInitialized) return;
         try {
-            if (urls.length > 0) {
-                const sanitized = urls.map(u => ({
+            // Only save local files to localStorage. 
+            // R2 songs (isLocalFile: false) should only be fetched from the API.
+            const localUrls = urls.filter(u => u.isLocalFile !== false);
+
+            if (localUrls.length > 0) {
+                const sanitized = localUrls.map(u => ({
                     ...u,
                     files: u.files ? u.files.map(f => ({ filename: f.filename })) : undefined
                 }));
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
-            } else if (urls.length === 0 && isInitialized) {
-                // Only remove if we intentionally want an empty library (e.g. after clearLibrary)
-                // If it's empty but we're about to load, this doesn't run because of line 140
+            } else {
+                // If there are no local files, clear the storage to avoid stale data
                 localStorage.removeItem(STORAGE_KEY);
             }
         } catch (e) { }
@@ -517,13 +500,7 @@ export function MusicLibraryProvider({ children }: { children: ReactNode }) {
     );
 }
 
-export const useMusicLibraryContext = () => {
-    const context = useContext(MusicLibraryContext);
-    if (context === undefined) {
-        throw new Error('useMusicLibraryContext must be used within a MusicLibraryProvider');
-    }
-    return context;
-};
+// useMusicLibraryContext removed and moved to src/hooks/useMusicLibrary.ts to satisfy Vite Fast Refresh
 
 function generateLayersFromFiles(files: { filename: string; blobUrl?: string }[]): MusicLayer[] {
     const mapping: Record<string, { name: string; icon: string }> = {

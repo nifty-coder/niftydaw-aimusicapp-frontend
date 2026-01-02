@@ -18,16 +18,6 @@ import { useToast } from '@/hooks/use-toast';
 export const UserProfile: React.FC = () => {
   const { currentUser, logout } = useAuth();
   const { profile } = useProfileAPI();
-  const [localPic, setLocalPic] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    try {
-      const p = localStorage.getItem('user-profile-picture');
-      if (p) setLocalPic(p);
-    } catch (e) {
-      // noop
-    }
-  }, []);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -65,10 +55,9 @@ export const UserProfile: React.FC = () => {
           <Avatar className="h-8 w-8">
             <AvatarImage
               src={
-                // Prefer the locally cached picture if available (overrides profile value)
-                localPic || (currentUser?.providerData?.[0]?.providerId === 'google.com'
-                  ? currentUser?.photoURL || profile?.profile_picture || undefined
-                  : profile?.profile_picture || undefined)
+                profile?.profile_picture ||
+                currentUser?.photoURL ||
+                undefined
               }
               alt={displayName}
             />

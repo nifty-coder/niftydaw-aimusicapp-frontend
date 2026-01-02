@@ -168,9 +168,17 @@ export const useProfileAPI = () => {
     }
   };
 
-  // Fetch profile when currentUser changes
+  // Fetch profile when currentUser changes OR when window is focused (cross-device sync)
   useEffect(() => {
     fetchProfile();
+
+    const handleFocus = () => {
+      console.log('Window focused, refetching profile for sync...');
+      fetchProfile();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [currentUser]);
 
   return {

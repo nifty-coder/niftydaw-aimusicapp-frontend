@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { updateProfile as firebaseUpdateProfile } from 'firebase/auth'; // Renamed to avoid confusion
+import { updateProfile as firebaseUpdateProfile, deleteUser } from 'firebase/auth'; // Renamed to avoid confusion
 import { useProfileAPI } from '@/hooks/useProfileAPI';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,11 +10,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, User, Mail, Calendar, Edit3, Save, X, LogOut, ArrowLeft } from 'lucide-react';
+import { Loader2, User, Mail, Calendar, Edit3, Save, X, LogOut, ArrowLeft, Trash2, AlertTriangle, Camera } from 'lucide-react';
 
 const Profile = () => {
   const { currentUser, logout } = useAuth();
-  const { profile, loading: profileApiLoading, updateDisplayName, updateProfilePicture } = useProfileAPI();
+  const { profile, loading: profileApiLoading, updateDisplayName, updateProfilePicture, deleteProfile } = useProfileAPI();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
@@ -190,6 +190,48 @@ const Profile = () => {
     }
   };
 
+  const handleDeleteAccount = async () => {
+    if (!window.confirm('Are you absolutely sure you want to delete your account? This action CANNOT be undone and will delete all your songs and data permanently.')) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // 1. Delete backend profile and data
+      await deleteProfile();
+
+      // 2. Delete Firebase user
+      if (currentUser) {
+        await deleteUser(currentUser);
+      }
+
+      toast({
+        title: 'Account deleted',
+        description: 'Your account has been successfully deleted.',
+      });
+      navigate('/auth');
+    } catch (error: any) {
+      console.error('Delete account error:', error);
+
+      // Handle re-auth requirement
+      if (error.code === 'auth/requires-recent-login') {
+        toast({
+          title: 'Security Check Required',
+          description: 'For security, please log out and log back in before deleting your account.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Error',
+          description: error.message || 'Failed to delete account',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
       ...prev,
@@ -224,8 +266,8 @@ const Profile = () => {
           <div className="lg:col-span-1">
             <Card className="bg-white/10 backdrop-blur-sm border-white/20">
               <CardHeader className="text-center pb-4">
-                <div className="relative mx-auto mb-4">
-                  <Avatar className="h-24 w-24 mx-auto">
+                <div className="relative mx-auto mb-4 group cursor-pointer" onClick={handleChoosePhoto}>
+                  <Avatar className="h-24 w-24 mx-auto border-2 border-white/10 transition-transform group-hover:scale-105">
                     <AvatarImage
                       src={profile?.profile_picture || currentUser?.photoURL || undefined}
                       alt={displayName}
@@ -234,6 +276,26 @@ const Profile = () => {
                       {getInitials(displayName)}
                     </AvatarFallback>
                   </Avatar>
+
+                  {/* Camera Overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <Camera className="h-8 w-8 text-white" />
+                  </div>
+
+                  {/* Loading State Overlay */}
+                  {loadingState && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 z-10">
+                      <Loader2 className="h-8 w-8 text-white animate-spin" />
+                    </div>
+                  )}
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileSelected}
+                  />
                 </div>
                 <CardTitle className="text-xl text-white">{displayName}</CardTitle>
                 <CardDescription className="text-white/70">{userEmail}</CardDescription>
@@ -359,19 +421,10 @@ const Profile = () => {
                     </div>
                   </div>
                   {isEditing && (
-                    <div className="mt-3 flex space-x-2">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleFileSelected}
-                      />
-                      <Button onClick={handleChoosePhoto} disabled={loadingState} variant="outline" className="border-white/20 text-white hover:bg-white/10">
-                        Upload Photo
-                      </Button>
-                      <Button onClick={handleRemovePhoto} disabled={loadingState || !profile?.profile_picture} variant="ghost" className="text-white">
-                        Remove Photo
+                    <div className="mt-3">
+                      <Button onClick={handleRemovePhoto} disabled={loadingState || !profile?.profile_picture} variant="ghost" className="text-red-400 hover:text-red-300 hover:bg-red-900/20 px-0">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Remove Profile Photo
                       </Button>
                     </div>
                   )}
@@ -397,6 +450,32 @@ const Profile = () => {
                     <span className="text-sm text-green-400">
                       ✓ Email Verified
                     </span>
+                  </div>
+                </div>
+
+                {/* Danger Zone */}
+                <Separator className="bg-white/10 my-6" />
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2 text-red-400">
+                    <AlertTriangle className="h-5 w-5" />
+                    <h3 className="text-lg font-semibold">Danger Zone</h3>
+                  </div>
+                  <div className="p-4 rounded-md border border-red-500/20 bg-red-500/10 space-y-4">
+                    <div>
+                      <h4 className="text-white font-medium mb-1">Delete Account</h4>
+                      <p className="text-sm text-white/60">
+                        Permanently delete your account and all associated data. This action cannot be undone.
+                      </p>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeleteAccount}
+                      disabled={saving}
+                      className="w-full sm:w-auto"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete Account
+                    </Button>
                   </div>
                 </div>
               </CardContent>

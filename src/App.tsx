@@ -10,6 +10,7 @@ import { AuthRedirect } from "@/components/auth/AuthRedirect";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
+import GoogleAuthVerify from "./pages/GoogleAuthVerify";
 import ActivationPage from "./pages/ActivationPage";
 import NotFound from "./pages/NotFound";
 
@@ -48,6 +49,7 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              <Route path="/google-auth-verify" element={<GoogleAuthVerify />} />
               <Route path="/activate" element={<ActivationPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
