@@ -384,7 +384,7 @@ export function HeroSection() {
 
               <div className="text-sm text-muted-foreground text-center max-w-lg mx-auto leading-relaxed">
                 <strong>Note:</strong> AI generation may not always be 100% accurate.
-                Splitting high-quality files may take up to 5 minutes.
+                Splitting high-quality files may take up to 5 minutes. Stay on this page while the process is complete.
               </div>
             </div>
 

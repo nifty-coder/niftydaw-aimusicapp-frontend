@@ -38,8 +38,7 @@ const Pricing = () => {
                         <span className="text-primary">Coming Soon</span>
                     </h1>
                     <p className="text-xl text-white/70 max-w-2xl mx-auto leading-relaxed">
-                        We're putting the finishing touches on our paid tiers. Get ready for higher quality exports,
-                        higher processing speeds, and advanced AI features.
+                        Get ready for higher quality exports, higher processing speeds, and advanced AI features.
                     </p>
                 </div>
 
@@ -98,7 +97,7 @@ const Pricing = () => {
                             href="https://niftysoftsol.com"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-white/50 hover:text-primary transition-colors font-medium"
+                            className="text-primary hover:underline font-medium"
                         >
                             Nifty Software Solutions
                         </a>

@@ -111,61 +111,67 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     provider.setCustomParameters({ prompt: 'select_account' });
 
     try {
+      console.log('--- Google Sign-In Phase 1: Starting Popup ---');
       const cred = await signInWithPopup(auth, provider);
-      const email = cred.user.email;
+
+      const user = cred.user;
+      const additionalInfo = getAdditionalUserInfo(cred);
+      const isNewUser = additionalInfo?.isNewUser;
+
+      // Extremely aggressive email detection
+      const email = user.email ||
+        (user.providerData && user.providerData[0]?.email) ||
+        (additionalInfo?.profile as any)?.email;
 
       if (!email) {
+        console.error('--- Google Sign-In Error: No email found ---');
+        if (isNewUser) {
+          console.log('Cleaning up new user created without email...');
+          try { await deleteUser(user); } catch (e) { console.error('Cleanup failed:', e); }
+        }
         await signOut(auth);
-        throw new Error('We could not retrieve an email address from your Google account.');
+        throw new Error('We could not retrieve an email address from your Google account. Please ensure your Google account shares your email.');
       }
 
-      // Check for existing sign-in methods for this email
       const methods = await fetchSignInMethodsForEmail(auth, email);
       const hasPasswordMethod = methods.includes('password');
 
+      // If they have a password account, we block Google sign-in
+      // We also check if they have multiple methods. If they have 'password' and this is a 'isNewUser' Google attempt,
+      // it means they are trying to use Google for an email that ALREADY has a password.
       if (hasPasswordMethod) {
-        // If they have a password account, we don't want them using Google 
-        // unless they are already linked (which they won't be if methods.length > 1 and it's a conflict case)
-        // Actually, if they have a password account and just signed in with Google, 
-        // Firebase might have linked them if "Link accounts" is on.
-        // We want to force them to use password if they started with it.
-
-        const additionalInfo = getAdditionalUserInfo(cred);
-        const isNewUser = additionalInfo?.isNewUser;
-
-        console.log('Auth Conflict Detected:', { email, methods, isNewUser });
-
-        // If it's a new Google "user" (new link/account) but email already has password
-        // we block it and sign out.
-        await signOut(auth);
-
-        if (isNewUser) {
+        // Always attempt cleanup if we have a password method and this Google attempt is new
+        // or if Google is not the ONLY method (meaning it was just added as a link/new account)
+        if (isNewUser || methods.length > 1) {
           try {
-            await deleteUser(cred.user);
+            await deleteUser(user);
           } catch (e) {
-            console.error('Failed to cleanup duplicate user:', e);
+            console.error('Deletion failed', e);
           }
         }
 
+        await signOut(auth);
         throw new Error('CONFLICT_PASSWORD_EXISTS');
       }
 
-      // If no password conflict, proceed
-      const additionalInfo = getAdditionalUserInfo(cred);
-      if (additionalInfo?.isNewUser) {
-        try {
-          localStorage.removeItem('music-analyzer-library');
-        } catch (e) { }
+      // Success
+      if (isNewUser) {
+        try { localStorage.removeItem('music-analyzer-library'); } catch (e) { }
+      } else {
+        console.log('--- Google Sign-In Complete: Signed In Existing User ---');
       }
 
       return cred;
     } catch (err: any) {
+      console.error('--- Google Sign-In Phase 4: Error Handler ---', err.code || err.message);
+
       if (err.message === 'CONFLICT_PASSWORD_EXISTS') {
         throw new Error('This email is already linked to a password account. Please sign in with your email and password.');
       }
 
       if (err.code === 'auth/account-exists-with-different-credential') {
-        throw new Error('This email is already linked to a different sign-in method. Please use your existing account.');
+        // If Firebase blocks it automatically, we still want to inform the user
+        throw new Error('This email is already linked to a different sign-in method. Please use your existing account (Email/Password).');
       }
 
       throw new Error(getFriendlyErrorMessage(err));

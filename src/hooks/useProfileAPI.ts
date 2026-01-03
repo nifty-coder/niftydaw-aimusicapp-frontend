@@ -23,7 +23,6 @@ export const useProfileAPI = () => {
       const response = await apiService.getProfile();
 
       if (response.success && response.data) {
-        console.log('Profile fetched successfully:', response.data);
         setProfile(response.data);
         // Persist profile picture locally for UI resilience across reloads
         try {
