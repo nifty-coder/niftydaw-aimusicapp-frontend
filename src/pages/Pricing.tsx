@@ -35,7 +35,7 @@ const Pricing = () => {
                     </div>
                     <h1 className="text-5xl md:text-6xl font-bold text-white mb-6 tracking-tight">
                         Premium Features <br />
-                        <span className="text-primary">Coming Very Soon</span>
+                        <span className="text-primary">Coming Soon</span>
                     </h1>
                     <p className="text-xl text-white/70 max-w-2xl mx-auto leading-relaxed">
                         We're putting the finishing touches on our paid tiers. Get ready for higher quality exports,

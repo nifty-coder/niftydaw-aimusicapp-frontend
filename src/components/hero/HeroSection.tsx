@@ -110,16 +110,20 @@ export function HeroSection() {
         <div className="space-y-6 animate-fade-in">
           <div className="flex items-center justify-center gap-3 mb-6">
             <img
-              src="/SplitSonic-logo.png"
-              alt="SplitSonic Logo"
+              src="/NiftyDAW-logo.png"
+              alt="NiftyDAW Logo"
               className="w-18 h-16 object-contain"
             />
             <h1 className="text-3xl md:text-4xl lg:text-6xl font-bold text-transparent bg-clip-text bg-gradient-primary">
-              SplitSonic
+              NiftyDAW
             </h1>
           </div>
 
           <p className="text-base md:text-lg lg:text-2xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            Your one-stop Digital Audio Workstation (DAW) for AI-powered audio separation.
+          </p>
+
+          <p className="text-base md:text-md lg:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Upload your music tracks to isolate audio layers.
             Separate bass, drums, vocals, and instruments with AI precision.
           </p>
@@ -340,7 +344,7 @@ export function HeroSection() {
                             </p>
                             <p>
                               <strong>2. Usage Rights</strong><br />
-                              By uploading, you grant SplitSonic a temporary license to process your file solely for the purpose of separation. We do not claim ownership of your content.
+                              By uploading, you grant NiftyDAW a temporary license to process your file solely for the purpose of separation. We do not claim ownership of your content.
                             </p>
                             <p>
                               <strong>3. Data Retention</strong><br />
