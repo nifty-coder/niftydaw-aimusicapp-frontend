@@ -6,6 +6,12 @@ import { useMusicLibrary } from "@/hooks/useMusicLibrary";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 
 // Extend Window interface for SpeechRecognition
 declare global {
@@ -19,6 +25,7 @@ export function SpeechControl() {
     const [connectionState, setConnectionState] = useState<'offline' | 'connecting' | 'online'>('offline');
     const [status, setStatus] = useState<string | null>(null);
     const [liveTranscript, setLiveTranscript] = useState<string | null>(null);
+    const [flowState, setFlowState] = useState<'idle' | 'tos-verification'>('idle');
 
     // Refs for new implementation
     const socketRef = useRef<WebSocket | null>(null);
@@ -70,9 +77,83 @@ export function SpeechControl() {
         }
     }, []);
 
+    // TTS Helper
+    const speak = useCallback((text: string) => {
+        if ('speechSynthesis' in window) {
+            // Cancel any ongoing speech
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+
+            // Optional: Select a specific voice if desired, otherwise default
+            // const voices = window.speechSynthesis.getVoices();
+            // utterance.voice = voices.find(v => v.lang === 'en-US') || null;
+
+            window.speechSynthesis.speak(utterance);
+        }
+    }, []);
+
+    const stopListening = useCallback(() => {
+        setListeningState(false);
+        setStatus(null);
+        setFlowState('idle'); // Reset conversational state
+
+        // Stop recorder
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+            // Stop all tracks to release microphone
+            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+        }
+        mediaRecorderRef.current = null;
+
+        // Close socket
+        if (socketRef.current) {
+            socketRef.current.close();
+        }
+        socketRef.current = null;
+
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+        }
+    }, [setListeningState]);
+
     const processCommand = useCallback((transcript: string) => {
         const text = transcript.toLowerCase().trim();
         console.log("Command Transcript:", text);
+
+        // --- CONVERSATIONAL FLOW HANDLING ---
+
+        if (flowState === 'tos-verification') {
+            if (text.includes("yes") || text.includes("agree") || text.includes("i do") || text.includes("sure") || text.includes("ok")) {
+                speak("Great. Proceeding with the request.");
+                setStatus("TOS Agreed. Proceeding...");
+                setFlowState('idle');
+                // Trigger the action provided it was "split music" or similar context
+                // For simplicity, we assume the user wanted to split music or just view TOS and confirm.
+                // If we need to distinguish what triggered it, we'd need another state variable.
+                // Defaulting to triggering the split/upload view actions.
+                window.dispatchEvent(new CustomEvent('voice-trigger-split'));
+                return true;
+            } else if (text.includes("no") || text.includes("cancel") || text.includes("don't") || text.includes("disagree")) {
+                speak("Cancelled.");
+                setStatus("Cancelled.");
+                setFlowState('idle');
+                return true;
+            }
+            // If waiting for response, ignore other commands or maybe allow "stop" commands
+            if (text.endsWith("done") || text === "stop listening" || text === "turn off" || text === "stop voice") {
+                speak("Cancelling voice control.");
+                stopListening();
+                return true;
+            }
+            return false; // Keep listening for answer
+        }
+
+        // --- STANDARD COMMANDS ---
 
         // Navigation Commands
         if (text.includes("go to profile")) {
@@ -111,7 +192,7 @@ export function SpeechControl() {
             }
             return true;
         }
-        if (text.includes("stop music") || text.includes("stop all")) {
+        if (text.includes("stop music") || text.includes("stop all") || text.includes("stop playing") || text.includes("pause music")) {
             setStatus("Stopping playback...");
             stopAllPlayback();
             return true;
@@ -134,28 +215,55 @@ export function SpeechControl() {
             return true;
         }
 
-        if (text.endsWith("done") || text === "stop listening" || text === "turn off") {
+        if (text.endsWith("done") || text === "stop listening" || text === "turn off" || text === "stop voice") {
             setStatus("Powering off voice control...");
             stopListening();
             return true;
         }
 
         // File Actions
-        if (text.includes("upload file") || text.includes("upload music")) {
-            setStatus("Opening file picker...");
-            document.getElementById('audioUpload')?.click();
-            return true;
-        }
-        if (text.includes("split song") || text.includes("split music") || text.includes("split")) {
-            setStatus("Starting analysis...");
-            window.dispatchEvent(new CustomEvent('voice-trigger-split'));
+        if (text.includes("clear file") || text.includes("remove file") || text.includes("clear selection") || text.includes("cancel upload")) {
+            const clearBtn = document.getElementById('clear-file-button');
+            if (clearBtn) {
+                setStatus("Clearing selection...");
+                clearBtn.click();
+            } else {
+                setStatus("No file to clear.");
+            }
             return true;
         }
 
-        // TOS and Stem Interactions
-        if (text.includes("view tos") || text.includes("view terms") || text.includes("show terms")) {
-            setStatus("Opening Terms of Service...");
+        if (text.includes("upload file") || text.includes("upload music") || text.includes("select file") || text.includes("pick file") || text.includes("choose file") || text.includes("select song")) {
+            const fileInput = document.getElementById('audioUpload');
+            if (fileInput) {
+                setStatus("Opening file picker...");
+                fileInput.click();
+            } else {
+                // Check if file is already selected (which hides input)
+                const clearBtn = document.getElementById('clear-file-button');
+                if (clearBtn) {
+                    speak("A file is already selected. Say 'clear file' to remove it.");
+                    setStatus("File already selected.");
+                } else {
+                    setStatus("File picker unavailable.");
+                    console.warn("audioUpload input not found");
+                }
+            }
+            return true;
+        }
+
+        // INTERCEPT for TOS Flow
+        if (text.includes("split song") || text.includes("split music") || text.includes("split") ||
+            text.includes("view tos") || text.includes("view terms") || text.includes("show terms") || text.includes("terms of service") || text.includes("view the terms of service")) {
+
+            setStatus("Please listen to the Terms of Service...");
+            // Open the visual modal first
             window.dispatchEvent(new CustomEvent('voice-view-tos'));
+
+            const tosSummary = "By using this service, you agree that you own the rights to the uploaded music or have permission to use it. Do you agree to these terms?";
+
+            speak(tosSummary);
+            setFlowState('tos-verification');
             return true;
         }
 
@@ -179,6 +287,7 @@ export function SpeechControl() {
             if (stemId.includes("vocal")) stemId = "vocals";
             if (stemId.includes("instrumental") || stemId.includes("instrument")) stemId = "instrumental";
             if (stemId.includes("original") || stemId.includes("source")) stemId = "original audio";
+            if (stemId.includes("bas")) stemId = "bass"; // Catch 'base' misspelling
 
             const validStems = ["vocals", "percussion", "bass", "other", "instrumental", "original audio"];
             if (validStems.includes(stemId)) {
@@ -227,40 +336,19 @@ export function SpeechControl() {
         }
 
         return false; // No command matched
-    }, [urls, navigate, logout, handlePlayAll, stopAllPlayback, clearLibrary, handlePlayToggle]);
-
-    const stopListening = useCallback(() => {
-        setListeningState(false);
-        setStatus(null);
-
-        // Stop recorder
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop();
-            // Stop all tracks to release microphone
-            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-        }
-        mediaRecorderRef.current = null;
-
-        // Close socket
-        if (socketRef.current) {
-            socketRef.current.close();
-        }
-        socketRef.current = null;
-
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-        }
-    }, [setListeningState]);
+    }, [urls, navigate, logout, handlePlayAll, stopAllPlayback, clearLibrary, handlePlayToggle, flowState, speak, stopListening]);
 
     const resetInactivityTimeout = useCallback(() => {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         timeoutRef.current = setTimeout(() => {
             if (isListeningRef.current) {
                 console.log("Auto-stopping due to inactivity");
+                // Check flowState if needed before stopping? 
+                // Currently just stops. User might be thinking. 
+                // 30s is generous enough.
                 stopListening();
             }
-        }, 10000); // 10 seconds
+        }, 30000); // 30 seconds
     }, [stopListening]);
 
     const startListening = useCallback(async () => {
@@ -335,8 +423,8 @@ export function SpeechControl() {
                                 });
                             }
 
-                            // Auto-pause
-                            stopListening();
+                            // Don't auto-stop, let inactivity timeout handle it
+                            // stopListening();
 
                             // Persist transcript briefly
                             setTimeout(() => setLiveTranscript(null), 3500);
@@ -425,46 +513,68 @@ export function SpeechControl() {
                 )}
             </div>
 
-            {/* Transcription Dialog Overlay */}
-            {(connectionState === 'online' || connectionState === 'connecting' || liveTranscript) && (
-                <div className={cn(
-                    "fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] transition-all duration-300 transform",
-                    (connectionState !== 'offline' || liveTranscript) ? "translate-y-0 opacity-100 scale-100" : "translate-y-4 opacity-0 scale-95 pointer-events-none"
-                )}>
-                    <div className="bg-card/80 backdrop-blur-2xl border border-primary/30 shadow-2xl rounded-2xl px-8 py-6 flex flex-col items-center gap-4 min-w-[320px] max-w-[90vw]">
-                        <div className="flex items-center gap-3">
+
+            {/* Transcription Modal Dialog */}
+            <Dialog
+                open={connectionState === 'online' || connectionState === 'connecting' || !!liveTranscript}
+                onOpenChange={(open) => {
+                    if (!open) stopListening();
+                }}
+            >
+                <DialogContent className="sm:max-w-md bg-card/95 backdrop-blur-xl border-primary/20 shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-3 text-primary uppercase tracking-widest text-xs font-bold">
                             <div className={cn(
                                 "w-2.5 h-2.5 rounded-full",
                                 connectionState === 'online' ? "bg-primary animate-pulse shadow-glow" :
                                     connectionState === 'connecting' ? "bg-yellow-400 animate-pulse" : "bg-muted"
                             )} />
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-primary leading-none">
-                                {connectionState === 'connecting' ? "Connecting..." : (connectionState === 'online' ? "Listening Live" : "Processing")}
-                            </span>
-                        </div>
+                            {connectionState === 'connecting' ? "Connecting..." : (connectionState === 'online' ? "Listening Live" : "Processing")}
+                        </DialogTitle>
+                    </DialogHeader>
 
-                        <div className="text-lg md:text-xl font-medium text-foreground text-center line-clamp-2 min-h-[1.5em] transition-all">
-                            {liveTranscript ? (
-                                <span className="text-foreground italic">"{liveTranscript}"</span>
+                    <div className="flex flex-col items-center justify-center py-8 gap-6">
+                        {/* Status Icon/Visualizer Placeholder - could add a waveform here later */}
+                        <div className={cn(
+                            "w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500",
+                            connectionState === 'online' ? "bg-primary/10 scale-110" : "bg-muted/10"
+                        )}>
+                            {connectionState === 'connecting' ? (
+                                <div className="p-4"><Loader2 className="w-8 h-8 text-primary animate-spin" /></div>
                             ) : (
-                                <span className={cn(
-                                    "text-muted-foreground/40 italic",
-                                    connectionState === 'online' && "text-primary/60 font-semibold not-italic"
-                                )}>
-                                    {connectionState === 'connecting' ? "Connecting to server..." :
-                                        connectionState === 'online' ? "Online" : "Terminated"}
-                                </span>
+                                <Mic className={cn(
+                                    "w-8 h-8 transition-colors duration-300",
+                                    connectionState === 'online' ? "text-primary animate-pulse" : "text-muted-foreground"
+                                )} />
                             )}
                         </div>
 
+                        {/* Transcript Area */}
+                        <div className="text-center space-y-2 w-full px-2">
+                            <div className="text-2xl md:text-3xl font-medium text-foreground text-center min-h-[1.5em] transition-all break-words leading-tight">
+                                {liveTranscript ? (
+                                    <span className="text-foreground animate-in fade-in zoom-in-95 duration-200">"{liveTranscript}"</span>
+                                ) : (
+                                    <span className={cn(
+                                        "text-muted-foreground/40 italic text-lg",
+                                        connectionState === 'online' && "text-primary/60 font-semibold not-italic"
+                                    )}>
+                                        {connectionState === 'connecting' ? "Connecting to server..." :
+                                            connectionState === 'online' ? "Listening..." : "Terminated"}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Status Message */}
                         {status && (
-                            <div className="text-[11px] font-bold text-primary bg-primary/10 px-3 py-1 rounded-full animate-fade-in">
+                            <div className="text-xs font-bold text-primary bg-primary/10 px-4 py-1.5 rounded-full animate-fade-in border border-primary/20">
                                 {status}
                             </div>
                         )}
                     </div>
-                </div>
-            )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

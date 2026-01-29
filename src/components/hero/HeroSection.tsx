@@ -52,13 +52,14 @@ export function HeroSection() {
 
   useEffect(() => {
     const handleVoiceSplit = () => {
+      setIsTosOpen(false);
       setTosAgreed(true);
       // We use a timeout to ensure state update for tosAgreed is processed
       // although handleAnalyze reads from state, sometimes batching can be tricky
       setTimeout(() => {
         const analyzeBtn = document.getElementById('analyze-button');
         if (analyzeBtn && !analyzeBtn.hasAttribute('disabled')) {
-          handleAnalyze();
+          analyzeBtn.click();
         } else {
           toast({
             title: "Voice Command",
@@ -66,7 +67,7 @@ export function HeroSection() {
             variant: "destructive"
           });
         }
-      }, 100);
+      }, 300); // Increased timeout slightly to ensure render cycle completes
     };
 
     window.addEventListener('voice-trigger-split', handleVoiceSplit);
@@ -220,6 +221,7 @@ export function HeroSection() {
                           </span>
                         </div>
                         <button
+                          id="clear-file-button"
                           onClick={clearSelection}
                           className="p-1 hover:bg-background/50 rounded-full transition-colors text-muted-foreground hover:text-foreground"
                           disabled={uploadLoading}
