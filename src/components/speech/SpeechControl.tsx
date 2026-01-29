@@ -446,8 +446,24 @@ export function SpeechControl() {
 
             socket.onclose = () => {
                 console.log("WebSocket closed");
-                if (isListeningRef.current) {
+                // Don't immediately stop if we have a transcript showing
+                // Let the transcript timeout (3.5s) handle cleanup
+                // Only force stop if no transcript is being displayed
+                if (isListeningRef.current && !liveTranscript) {
                     stopListening();
+                } else if (isListeningRef.current) {
+                    // WebSocket closed but transcript is showing
+                    // Just update connection state, keep modal open
+                    setConnectionState('offline');
+                    isListeningRef.current = false;
+
+                    // Clean up media recorder
+                    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                        mediaRecorderRef.current.stop();
+                        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+                    }
+                    mediaRecorderRef.current = null;
+                    socketRef.current = null;
                 }
             };
 
