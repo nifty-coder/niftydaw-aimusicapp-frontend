@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Mic, MicOff, Loader2 } from "lucide-react";
+import { Mic, MicOff, Loader2, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMusicLibrary } from "@/hooks/useMusicLibrary";
@@ -11,6 +11,7 @@ import {
     DialogContent,
     DialogHeader,
     DialogTitle,
+    DialogDescription,
 } from "@/components/ui/dialog";
 
 // Extend Window interface for SpeechRecognition
@@ -25,7 +26,8 @@ export function SpeechControl() {
     const [connectionState, setConnectionState] = useState<'offline' | 'connecting' | 'online'>('offline');
     const [status, setStatus] = useState<string | null>(null);
     const [liveTranscript, setLiveTranscript] = useState<string | null>(null);
-    const [flowState, setFlowState] = useState<'idle' | 'tos-verification'>('idle');
+    const [flowState, setFlowState] = useState<'idle' | 'tos-verification' | 'upload-confirmation'>('idle');
+    const [pendingAction, setPendingAction] = useState<{ type: 'upload' | 'select', label: string } | null>(null);
 
     // Refs for new implementation
     const socketRef = useRef<WebSocket | null>(null);
@@ -38,20 +40,33 @@ export function SpeechControl() {
     const { urls, handlePlayAll, stopAllPlayback, clearLibrary, handlePlayToggle } = useMusicLibrary();
     const { toast } = useToast();
 
+    // Helper to check if we are on a mobile device
+    const isMobile = useCallback(() => {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+    }, []);
+
     // Helper to change listening state in both ref and component state
     const setListeningState = useCallback((state: boolean) => {
         setConnectionState(state ? 'online' : 'offline');
         isListeningRef.current = state;
-        if (!state && timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
+        if (!state) {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+            }
+            // Clear pending action and flow if we stop listening
+            setPendingAction(null);
+            setFlowState('idle');
         }
     }, []);
 
     // Sound feedback for activation
     const playActivationSound = useCallback(() => {
         try {
-            const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+            if (!AudioContextClass) return;
+
+            const context = new AudioContextClass();
             const oscillator = context.createOscillator();
             const gainNode = context.createGain();
 
@@ -84,13 +99,9 @@ export function SpeechControl() {
             window.speechSynthesis.cancel();
 
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 1.0;
+            utterance.rate = 1.1; // Slightly faster for responsiveness
             utterance.pitch = 1.0;
             utterance.volume = 1.0;
-
-            // Optional: Select a specific voice if desired, otherwise default
-            // const voices = window.speechSynthesis.getVoices();
-            // utterance.voice = voices.find(v => v.lang === 'en-US') || null;
 
             window.speechSynthesis.speak(utterance);
         }
@@ -100,12 +111,17 @@ export function SpeechControl() {
         setListeningState(false);
         setStatus(null);
         setFlowState('idle'); // Reset conversational state
+        setPendingAction(null);
 
         // Stop recorder
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop();
-            // Stop all tracks to release microphone
-            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            try {
+                mediaRecorderRef.current.stop();
+                // Stop all tracks to release microphone
+                mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            } catch (e) {
+                console.error("Error stopping MediaRecorder:", e);
+            }
         }
         mediaRecorderRef.current = null;
 
@@ -121,6 +137,20 @@ export function SpeechControl() {
         }
     }, [setListeningState]);
 
+    const handlePendingAction = useCallback(() => {
+        if (!pendingAction) return;
+
+        if (pendingAction.type === 'upload') {
+            const fileInput = document.getElementById('audioUpload');
+            if (fileInput) {
+                fileInput.click();
+                setStatus("Opening file explorer...");
+                setPendingAction(null);
+                setFlowState('idle');
+            }
+        }
+    }, [pendingAction]);
+
     const processCommand = useCallback((transcript: string) => {
         const text = transcript.toLowerCase().trim();
         console.log("Command Transcript:", text);
@@ -132,10 +162,6 @@ export function SpeechControl() {
                 speak("Great. Proceeding with the request.");
                 setStatus("TOS Agreed. Proceeding...");
                 setFlowState('idle');
-                // Trigger the action provided it was "split music" or similar context
-                // For simplicity, we assume the user wanted to split music or just view TOS and confirm.
-                // If we need to distinguish what triggered it, we'd need another state variable.
-                // Defaulting to triggering the split/upload view actions.
                 window.dispatchEvent(new CustomEvent('voice-trigger-split'));
                 return true;
             } else if (text.includes("no") || text.includes("cancel") || text.includes("don't") || text.includes("disagree")) {
@@ -144,19 +170,44 @@ export function SpeechControl() {
                 setFlowState('idle');
                 return true;
             }
-            // If waiting for response, ignore other commands or maybe allow "stop" commands
             if (text.endsWith("done") || text === "stop listening" || text === "turn off" || text === "stop voice") {
                 speak("Cancelling voice control.");
                 stopListening();
                 return true;
             }
-            return false; // Keep listening for answer
+            return false;
+        }
+
+        if (flowState === 'upload-confirmation') {
+            if (text.includes("yes") || text.includes("sure") || text.includes("ok") || text.includes("confirm") || text.includes("do it") || text === "yes") {
+                const fileInput = document.getElementById('audioUpload');
+                if (fileInput) {
+                    try {
+                        // Attempt automatic click
+                        fileInput.click();
+                        speak("Attempting to open file explorer. If it doesn't appear, please tap the button on your screen.");
+                        setStatus("Opening file explorer...");
+                    } catch (e) {
+                        speak("Your browser requires a physical tap. Please touch the open file explorer button.");
+                        setStatus("Tap required...");
+                    }
+                }
+                // Keep the flow/button active in case the click was blocked
+                return true;
+            } else if (text.includes("no") || text.includes("cancel") || text.includes("stop")) {
+                speak("Cancelled.");
+                setStatus("Cancelled.");
+                setFlowState('idle');
+                setPendingAction(null);
+                return true;
+            }
+            return false;
         }
 
         // --- STANDARD COMMANDS ---
 
         // Navigation Commands
-        if (text.includes("go to profile")) {
+        if (text.includes("go to profile") || text.includes("view profile") || text.includes("show profile")) {
             setStatus("Navigating to profile...");
             navigate("/profile");
             return true;
@@ -174,11 +225,6 @@ export function SpeechControl() {
         if (text.includes("go to pricing") || text.includes("view pricing") || text.includes("show pricing")) {
             setStatus("Navigating to pricing...");
             navigate("/pricing");
-            return true;
-        }
-        if (text.includes("view profile") || text.includes("show profile")) {
-            setStatus("Navigating to profile...");
-            navigate("/profile");
             return true;
         }
 
@@ -221,7 +267,6 @@ export function SpeechControl() {
             return true;
         }
 
-        // File Actions
         if (text.includes("clear file") || text.includes("remove file") || text.includes("clear selection") || text.includes("cancel upload")) {
             const clearBtn = document.getElementById('clear-file-button');
             if (clearBtn) {
@@ -233,20 +278,31 @@ export function SpeechControl() {
             return true;
         }
 
-        if (text.includes("upload file") || text.includes("upload music") || text.includes("select file") || text.includes("pick file") || text.includes("choose file") || text.includes("select song")) {
+        if (text.includes("open files") || text.includes("upload file") || text.includes("upload music") || text.includes("select file") || text.includes("pick file") || text.includes("choose file") || text.includes("select song")) {
             const fileInput = document.getElementById('audioUpload');
             if (fileInput) {
-                setStatus("Opening file picker...");
-                fileInput.click();
+                setStatus("Opening file explorer...");
+
+                // Try direct click immediately (The Concept)
+                try {
+                    fileInput.click();
+                } catch (e) {
+                    console.warn("Direct click blocked by browser policy.");
+                }
+
+                if (isMobile()) {
+                    setFlowState('upload-confirmation');
+                    speak("Shall I open the file explorer for you?");
+                    setStatus("Confirm to open...");
+                    setPendingAction({ type: 'upload', label: 'Open File Explorer' });
+                }
             } else {
-                // Check if file is already selected (which hides input)
                 const clearBtn = document.getElementById('clear-file-button');
                 if (clearBtn) {
                     speak("A file is already selected. Say 'clear file' to remove it.");
                     setStatus("File already selected.");
                 } else {
                     setStatus("File picker unavailable.");
-                    console.warn("audioUpload input not found");
                 }
             }
             return true;
@@ -257,7 +313,6 @@ export function SpeechControl() {
             text.includes("view tos") || text.includes("view terms") || text.includes("show terms") || text.includes("terms of service") || text.includes("view the terms of service")) {
 
             setStatus("Please listen to the Terms of Service...");
-            // Open the visual modal first
             window.dispatchEvent(new CustomEvent('voice-view-tos'));
 
             const tosSummary = "By using this service, you agree that you own the rights to the uploaded music or have permission to use it. Do you agree to these terms?";
@@ -282,12 +337,11 @@ export function SpeechControl() {
         const selectStemMatch = text.match(/select (.+)/i);
         if (selectStemMatch) {
             let stemId = selectStemMatch[1].trim();
-            // Handle aliases/variations
             if (stemId.includes("drum") || stemId.includes("percussion")) stemId = "percussion";
             if (stemId.includes("vocal")) stemId = "vocals";
             if (stemId.includes("instrumental") || stemId.includes("instrument")) stemId = "instrumental";
             if (stemId.includes("original") || stemId.includes("source")) stemId = "original audio";
-            if (stemId.includes("bas")) stemId = "bass"; // Catch 'base' misspelling
+            if (stemId.includes("bas")) stemId = "bass";
 
             const validStems = ["vocals", "percussion", "bass", "other", "instrumental", "original audio"];
             if (validStems.includes(stemId)) {
@@ -297,8 +351,6 @@ export function SpeechControl() {
             return true;
         }
 
-        // Specific Stem Playback: "Play [stem] for/from [song]"
-        // e.g., "play vocals from bohemian rhapsody"
         const stemMatch = text.match(/play (.+) (?:for|from) (.+)/i);
         if (stemMatch) {
             const stemName = stemMatch[1].trim();
@@ -332,20 +384,17 @@ export function SpeechControl() {
             } else {
                 setStatus(`Could not find song "${songTitle}" in library`);
             }
-            return true; // Match found (even if song/stem not found)
+            return true;
         }
 
-        return false; // No command matched
-    }, [urls, navigate, logout, handlePlayAll, stopAllPlayback, clearLibrary, handlePlayToggle, flowState, speak, stopListening]);
+        return false;
+    }, [urls, navigate, logout, handlePlayAll, stopAllPlayback, clearLibrary, handlePlayToggle, flowState, speak, stopListening, isMobile]);
 
     const resetInactivityTimeout = useCallback(() => {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         timeoutRef.current = setTimeout(() => {
             if (isListeningRef.current) {
                 console.log("Auto-stopping due to inactivity");
-                // Check flowState if needed before stopping? 
-                // Currently just stops. User might be thinking. 
-                // 30s is generous enough.
                 stopListening();
             }
         }, 30000); // 30 seconds
@@ -372,36 +421,36 @@ export function SpeechControl() {
                 setLiveTranscript(null);
                 resetInactivityTimeout();
 
-                // Start MediaRecorder
-                // Use a supported mimeType or let browser decide (but we told backend WEBM_OPUS)
-                // Chrome usually supports 'audio/webm;codecs=opus'
-                let options = { mimeType: 'audio/webm;codecs=opus' };
-                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    console.warn("audio/webm;codecs=opus not supported, falling back to default");
-                    options = undefined;
+                // iOS and some mobile browsers are very picky about MediaRecorder mimeTypes
+                const mimeTypes = [
+                    'audio/webm;codecs=opus',
+                    'audio/webm',
+                    'audio/ogg;codecs=opus',
+                    'audio/mp4',
+                    'audio/aac'
+                ];
+
+                let selectedMimeType = '';
+                for (const mime of mimeTypes) {
+                    if (MediaRecorder.isTypeSupported(mime)) {
+                        selectedMimeType = mime;
+                        break;
+                    }
                 }
 
-                const recorder = new MediaRecorder(stream, options);
+                console.log(`[Audio] Using MimeType: ${selectedMimeType || 'default'}`);
+                const recorder = new MediaRecorder(stream, selectedMimeType ? { mimeType: selectedMimeType } : undefined);
                 mediaRecorderRef.current = recorder;
 
                 let chunkCount = 0;
                 recorder.ondataavailable = (e) => {
                     chunkCount++;
-                    if (chunkCount <= 3) {
-                        console.log(`[Audio] Chunk #${chunkCount}, size: ${e.data.size} bytes, type: ${e.data.type}`);
-                    }
                     if (e.data.size > 0 && socket.readyState === WebSocket.OPEN) {
                         socket.send(e.data);
-                        if (chunkCount <= 3) {
-                            console.log(`[Audio] Sent chunk #${chunkCount} to backend`);
-                        }
-                    } else if (e.data.size === 0) {
-                        console.warn(`[Audio] Chunk #${chunkCount} is empty (0 bytes)`);
                     }
                 };
 
                 recorder.start(250); // Send 250ms chunks
-                console.log(`[Audio] MediaRecorder started with mimeType: ${recorder.mimeType}`);
             };
 
             socket.onmessage = (event) => {
@@ -414,7 +463,6 @@ export function SpeechControl() {
                         setLiveTranscript(transcript);
 
                         if (isFinal) {
-                            // Run command and auto-pause
                             const matched = processCommand(transcript);
                             if (matched) {
                                 toast({
@@ -422,10 +470,6 @@ export function SpeechControl() {
                                     description: transcript,
                                 });
                             }
-
-                            // Don't auto-stop, let inactivity timeout handle it
-                            // stopListening();
-
                             // Persist transcript briefly
                             setTimeout(() => setLiveTranscript(null), 3500);
                         }
@@ -437,27 +481,31 @@ export function SpeechControl() {
 
             socket.onerror = (error) => {
                 console.error("WebSocket error:", error);
-                // Don't toast immediately if it's just a connection drop, but maybe if initial connect fails
-                if (connectionState === 'connecting') {
-                    toast({ title: "Connection Error", description: "Failed to connect to speech server.", variant: "destructive" });
+
+                // Detailed error messaging
+                let msg = "Failed to connect to speech server.";
+                if (socket.readyState === WebSocket.CLOSED) {
+                    msg = "Voice server connection refused. The backend service may be starting up or unavailable.";
+                }
+
+                if (connectionState === 'connecting' || connectionState === 'online') {
+                    toast({
+                        title: "Voice Control Error",
+                        description: msg,
+                        variant: "destructive"
+                    });
                 }
                 stopListening();
             };
 
             socket.onclose = () => {
                 console.log("WebSocket closed");
-                // Don't immediately stop if we have a transcript showing
-                // Let the transcript timeout (3.5s) handle cleanup
-                // Only force stop if no transcript is being displayed
                 if (isListeningRef.current && !liveTranscript) {
                     stopListening();
                 } else if (isListeningRef.current) {
-                    // WebSocket closed but transcript is showing
-                    // Just update connection state, keep modal open
                     setConnectionState('offline');
                     isListeningRef.current = false;
 
-                    // Clean up media recorder
                     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
                         mediaRecorderRef.current.stop();
                         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
@@ -547,10 +595,13 @@ export function SpeechControl() {
                             )} />
                             {connectionState === 'connecting' ? "Connecting..." : (connectionState === 'online' ? "Listening Live" : "Processing")}
                         </DialogTitle>
+                        <DialogDescription className="text-[10px] text-muted-foreground opacity-70">
+                            Speak clearly and use supported voice commands to control the app.
+                        </DialogDescription>
                     </DialogHeader>
 
                     <div className="flex flex-col items-center justify-center py-8 gap-6">
-                        {/* Status Icon/Visualizer Placeholder - could add a waveform here later */}
+                        {/* Status Icon/Visualizer */}
                         <div className={cn(
                             "w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500",
                             connectionState === 'online' ? "bg-primary/10 scale-110" : "bg-muted/10"
@@ -581,6 +632,18 @@ export function SpeechControl() {
                                 )}
                             </div>
                         </div>
+
+                        {/* MOBILE GESTURE BUTTON (Crucial for mobile support) */}
+                        {pendingAction && (
+                            <Button
+                                onClick={handlePendingAction}
+                                size="lg"
+                                className="mt-4 bg-gradient-primary animate-bounce shadow-glow-sm"
+                            >
+                                <Upload className="w-5 h-5 mr-2" />
+                                {pendingAction.label}
+                            </Button>
+                        )}
 
                         {/* Status Message */}
                         {status && (

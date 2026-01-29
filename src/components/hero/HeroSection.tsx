@@ -450,7 +450,7 @@ export function HeroSection() {
               {
                 icon: Upload,
                 title: "File Actions",
-                commands: ["\"Upload file\"", "\"Split music\"", "\"View TOS\""],
+                commands: ["\"Open files\"", "\"Upload file\"", "\"Split music\"", "\"View TOS\""],
                 color: "text-blue-400"
               },
               {
