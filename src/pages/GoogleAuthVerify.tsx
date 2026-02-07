@@ -16,18 +16,15 @@ const GoogleAuthVerify = () => {
     const errorMsg = searchParams.get('error');
 
     const startLogin = async () => {
-        console.log('GoogleAuthVerify: Starting login flow...');
         // Move to 'authenticating' step via URL
         setSearchParams({ step: 'authenticating' });
 
         try {
             const result = await signInWithGoogle();
-            console.log('GoogleAuthVerify: signInWithGoogle returned:', result ? 'Success' : 'Null');
 
             if (result) {
                 // If it returns, we passed all checks
                 setSearchParams({ step: 'success' });
-                console.log('GoogleAuthVerify: Navigating to home in 1.2s...');
                 setTimeout(() => navigate('/'), 1200);
             }
         } catch (err: any) {
@@ -37,8 +34,6 @@ const GoogleAuthVerify = () => {
             const isConflict = errorMessage.includes('password account') ||
                 errorMessage.includes('different sign-in method');
 
-            console.log('GoogleAuthVerify: Conflict detected?', isConflict);
-
             // Show error step in this page first
             setSearchParams({
                 step: 'error',
@@ -46,7 +41,6 @@ const GoogleAuthVerify = () => {
             });
 
             // After a delay, redirect back to login page so the error is visible there too
-            console.log('GoogleAuthVerify: Redirecting to login in delay...');
             setTimeout(() => {
                 const msg = encodeURIComponent(errorMessage);
                 navigate(`/auth?error=${msg}`);

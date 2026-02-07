@@ -26,7 +26,7 @@ export function SpeechControl() {
     const [connectionState, setConnectionState] = useState<'offline' | 'connecting' | 'online'>('offline');
     const [status, setStatus] = useState<string | null>(null);
     const [liveTranscript, setLiveTranscript] = useState<string | null>(null);
-    const [flowState, setFlowState] = useState<'idle' | 'tos-verification' | 'upload-confirmation'>('idle');
+    const [flowState, setFlowState] = useState<'idle' | 'tos-verification' | 'upload-confirmation' | 'stem-selection-prompt'>('idle');
     const [pendingAction, setPendingAction] = useState<{ type: 'upload' | 'select', label: string } | null>(null);
 
     // Refs for new implementation
@@ -34,6 +34,8 @@ export function SpeechControl() {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
     const isListeningRef = useRef(false); // Keep ref for logic capability
+    const tosSummaryStartTimeRef = useRef<number>(0);
+    const isAssistantSpeakingRef = useRef(false);
 
     const navigate = useNavigate();
     const { logout } = useAuth();
@@ -103,6 +105,21 @@ export function SpeechControl() {
             utterance.pitch = 1.0;
             utterance.volume = 1.0;
 
+            utterance.onstart = () => {
+                isAssistantSpeakingRef.current = true;
+                console.log("[Speech] Assistant started speaking");
+            };
+
+            utterance.onend = () => {
+                isAssistantSpeakingRef.current = false;
+                console.log("[Speech] Assistant finished speaking");
+            };
+
+            utterance.onerror = (event) => {
+                console.error("[Speech] TTS Error:", event);
+                isAssistantSpeakingRef.current = false;
+            };
+
             window.speechSynthesis.speak(utterance);
         }
     }, []);
@@ -110,6 +127,7 @@ export function SpeechControl() {
     const stopListening = useCallback(() => {
         setListeningState(false);
         setStatus(null);
+        setLiveTranscript(null);
         setFlowState('idle'); // Reset conversational state
         setPendingAction(null);
 
@@ -158,16 +176,48 @@ export function SpeechControl() {
         // --- CONVERSATIONAL FLOW HANDLING ---
 
         if (flowState === 'tos-verification') {
-            if (text.includes("yes") || text.includes("agree") || text.includes("i do") || text.includes("sure") || text.includes("ok")) {
+            // Prevent self-triggering: don't process agreement if the assistant is still speaking
+            // We check both the ref and the native API for extra safety
+            const isSpeaking = isAssistantSpeakingRef.current || (window.speechSynthesis && window.speechSynthesis.speaking);
+
+            if (isSpeaking) {
+                console.log("[Speech] Ignoring transcript because assistant is speaking (self-trigger prevention)");
+                return false;
+            }
+
+            // Ensure enough time has passed since the terms were announced (e.g. 2 seconds)
+            const elapsedSinceTos = Date.now() - tosSummaryStartTimeRef.current;
+            if (elapsedSinceTos < 2000) {
+                console.log("[Speech] Ignoring agreement because not enough time has passed since TOS announcement", { elapsedSinceTos });
+                return false;
+            }
+
+            console.log("[Speech] In tos-verification flow. Transcript:", text);
+
+            // Stricter matching to avoid accidental triggers
+            const words = text.split(/\s+/);
+            const matchesAgree =
+                text === "yes" ||
+                text === "i agree" ||
+                text === "agree" ||
+                text === "confirm" ||
+                text === "i do" ||
+                (words.length <= 3 && (text.includes("yes") || text.includes("agree")));
+
+            if (matchesAgree) {
+                console.log("[Speech] TOS Agreement confirmed via voice");
                 speak("Great. Proceeding with the request.");
                 setStatus("TOS Agreed. Proceeding...");
                 setFlowState('idle');
+                setLiveTranscript(null); // Clear immediately to help closure
                 window.dispatchEvent(new CustomEvent('voice-trigger-split'));
                 return true;
-            } else if (text.includes("no") || text.includes("cancel") || text.includes("don't") || text.includes("disagree")) {
+            } else if (text === "no" || text === "cancel" || text === "disagree" || text.includes("don't agree")) {
+                console.log("[Speech] TOS Agreement rejected via voice");
                 speak("Cancelled.");
                 setStatus("Cancelled.");
                 setFlowState('idle');
+                setLiveTranscript(null);
                 return true;
             }
             if (text.endsWith("done") || text === "stop listening" || text === "turn off" || text === "stop voice") {
@@ -201,6 +251,67 @@ export function SpeechControl() {
                 setPendingAction(null);
                 return true;
             }
+            return false;
+        }
+
+        if (flowState === 'stem-selection-prompt') {
+            const isSpeaking = isAssistantSpeakingRef.current || (window.speechSynthesis && window.speechSynthesis.speaking);
+            if (isSpeaking) return false;
+
+            console.log("[Speech] In stem-selection flow. Transcript:", text);
+
+            if (urls.length === 0) {
+                setFlowState('idle');
+                return false;
+            }
+
+            const latestSong = urls[0];
+
+            if (text.includes("all") || text.includes("everything") || text.includes("play all")) {
+                speak("Playing all stems.");
+                handlePlayAll(latestSong);
+                // Keep flowState as 'stem-selection-prompt' for persistence
+                return true;
+            }
+
+            const stems = latestSong.layers;
+            let targetStem = null;
+            if (text.includes("vocal")) targetStem = stems.find(s => s.id === 'vocals' || s.id === 'vocal');
+            else if (text.includes("drum") || text.includes("percussion")) targetStem = stems.find(s => s.id === 'drums' || s.id === 'drum');
+            else if (text.includes("bass")) targetStem = stems.find(s => s.id === 'bass');
+            else if (text.includes("instrumental") || text.includes("other")) targetStem = stems.find(s => s.id === 'other' || s.id === 'instrumental');
+            else if (text.includes("original")) targetStem = stems.find(s => s.id === 'original');
+
+            if (targetStem) {
+                const f = latestSong.files?.find(file => {
+                    const parts = file.filename.replace(/\\/g, '/').split('/');
+                    const basename = parts[parts.length - 1].split('.')[0].toLowerCase();
+                    return basename === targetStem.id.toLowerCase();
+                });
+
+                if (f) {
+                    speak(`Playing ${targetStem.name}.`);
+                    handlePlayToggle(`${latestSong.id}__${f.filename}`, f, latestSong);
+                    // Keep flowState as 'stem-selection-prompt' for persistence
+                    return true;
+                }
+            }
+
+            if (
+                text.includes("nothing") ||
+                text.includes("no thanks") ||
+                text.includes("stop") ||
+                text.includes("that's it") ||
+                text.includes("goodbye") ||
+                text === "no" ||
+                text === "done" ||
+                text === "cancel"
+            ) {
+                speak("Okay, let me know if you need anything else.");
+                setFlowState('idle');
+                return true;
+            }
+
             return false;
         }
 
@@ -315,8 +426,9 @@ export function SpeechControl() {
             setStatus("Please listen to the Terms of Service...");
             window.dispatchEvent(new CustomEvent('voice-view-tos'));
 
-            const tosSummary = "By using this service, you agree that you own the rights to the uploaded music or have permission to use it. Do you agree to these terms?";
+            const tosSummary = "By using this service, you agree that you own the rights to the uploaded music or have permission to use it. Please say, 'I agree', to proceed.";
 
+            tosSummaryStartTimeRef.current = Date.now();
             speak(tosSummary);
             setFlowState('tos-verification');
             return true;
@@ -390,6 +502,12 @@ export function SpeechControl() {
         return false;
     }, [urls, navigate, logout, handlePlayAll, stopAllPlayback, clearLibrary, handlePlayToggle, flowState, speak, stopListening, isMobile]);
 
+    // Ref to handle stale closures in persistent callbacks (WebSocket, MediaRecorder)
+    const processCommandRef = useRef(processCommand);
+    useEffect(() => {
+        processCommandRef.current = processCommand;
+    }, [processCommand]);
+
     const resetInactivityTimeout = useCallback(() => {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         timeoutRef.current = setTimeout(() => {
@@ -397,7 +515,7 @@ export function SpeechControl() {
                 console.log("Auto-stopping due to inactivity");
                 stopListening();
             }
-        }, 30000); // 30 seconds
+        }, 60000); // 1 minute
     }, [stopListening]);
 
     const startListening = useCallback(async () => {
@@ -463,7 +581,8 @@ export function SpeechControl() {
                         setLiveTranscript(transcript);
 
                         if (isFinal) {
-                            const matched = processCommand(transcript);
+                            console.log("[Speech] Final transcript received:", transcript);
+                            const matched = processCommandRef.current(transcript);
                             if (matched) {
                                 toast({
                                     title: "Voice Command",
@@ -526,12 +645,52 @@ export function SpeechControl() {
         }
     }, [playActivationSound, processCommand, resetInactivityTimeout, setListeningState, stopListening, toast, connectionState]);
 
-    // Clean up on unmount
+    // Clean up on unmount and handle file selection
     useEffect(() => {
-        return () => {
-            stopListening();
+        const handleFileSelected = () => {
+            console.log("[Speech] file-selected event received");
+            if (isMobile() && isListeningRef.current) {
+                console.log("[Speech] Stopping listening after file selection on mobile");
+                stopListening();
+            }
         };
-    }, [stopListening]);
+
+        const handleTosAgreed = () => {
+            console.log("[Speech] tos-agreed event received, stopping listening and clearing transcript");
+            // Use ref for check to avoid dependency on liveTranscript state
+            if (isListeningRef.current) {
+                stopListening();
+                setLiveTranscript(null);
+            }
+        };
+
+        const handleVoiceSplitSuccess = () => {
+            console.log("[Speech] voice-split-success event received");
+            // Internal version of speak to avoid dependency
+            const speakImmediate = (text: string) => {
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.onstart = () => { isAssistantSpeakingRef.current = true; };
+                    utterance.onend = () => { isAssistantSpeakingRef.current = false; };
+                    window.speechSynthesis.speak(utterance);
+                }
+            };
+
+            speakImmediate("It's done, check music library.");
+            window.dispatchEvent(new CustomEvent('open-sidebar'));
+            setFlowState('stem-selection-prompt');
+        };
+
+        window.addEventListener('file-selected', handleFileSelected);
+        window.addEventListener('tos-agreed', handleTosAgreed);
+        window.addEventListener('voice-split-success', handleVoiceSplitSuccess);
+
+        return () => {
+            window.removeEventListener('file-selected', handleFileSelected);
+            window.removeEventListener('tos-agreed', handleTosAgreed);
+            window.removeEventListener('voice-split-success', handleVoiceSplitSuccess);
+        };
+    }, [stopListening, isMobile]); // Removed liveTranscript and speak from dependencies
 
     const toggleListening = () => {
         if (connectionState === 'online' || connectionState === 'connecting') {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -8,6 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
+  DialogClose,
 } from "@/components/ui/dialog";
 import { Sparkles, Music, Upload, AlertCircle, FileAudio, CheckCircle2, X, Mic, Drum, Zap, Music2, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -29,6 +31,7 @@ export function HeroSection() {
   const [tosAgreed, setTosAgreed] = useState(false);
   const [selectedStems, setSelectedStems] = useState<string[]>(['vocals', 'percussion', 'bass', 'other', 'instrumental']);
   const [isTosOpen, setIsTosOpen] = useState(false);
+  const triggeredByVoiceRef = useRef(false);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -48,26 +51,32 @@ export function HeroSection() {
 
     setSelectedFile(f);
     setUploadProgress(0);
+    // Dispatch event to close listening window if active
+    window.dispatchEvent(new CustomEvent('file-selected'));
   };
 
   useEffect(() => {
     const handleVoiceSplit = () => {
-      setIsTosOpen(false);
       setTosAgreed(true);
-      // We use a timeout to ensure state update for tosAgreed is processed
-      // although handleAnalyze reads from state, sometimes batching can be tricky
+      setIsTosOpen(false);
+      triggeredByVoiceRef.current = true;
+      window.dispatchEvent(new CustomEvent('tos-agreed'));
+
+      // Small delay to ensure state updates have propagated
       setTimeout(() => {
         const analyzeBtn = document.getElementById('analyze-button');
-        if (analyzeBtn && !analyzeBtn.hasAttribute('disabled')) {
-          analyzeBtn.click();
+        const isButtonDisabled = !selectedFile || isLoading || selectedStems.length === 0;
+
+        if (!isButtonDisabled) {
+          handleAnalyze(true);
         } else {
           toast({
             title: "Voice Command",
-            description: "Please select a file first.",
+            description: selectedFile ? "Please select at least one stem." : "Please select a file first.",
             variant: "destructive"
           });
         }
-      }, 300); // Increased timeout slightly to ensure render cycle completes
+      }, 500);
     };
 
     window.addEventListener('voice-trigger-split', handleVoiceSplit);
@@ -104,10 +113,26 @@ export function HeroSection() {
     setUploadProgress(0);
   };
 
-  const handleAnalyze = async () => {
-    if (!selectedFile) return;
+  const handleTosAgree = () => {
+    setTosAgreed(true);
+    setIsTosOpen(false);
+    window.dispatchEvent(new CustomEvent('tos-agreed'));
+    // Use a small timeout to ensure state reflects TOS agreement before analysis
+    setTimeout(() => {
+      handleAnalyze(true);
+    }, 100);
+  };
 
-    if (!tosAgreed) {
+  const handleAnalyze = async (forceAgree: boolean = false) => {
+    const isAgreed = tosAgreed || forceAgree;
+
+    if (!selectedFile) {
+      console.warn("[Hero] No file selected");
+      return;
+    }
+
+    if (!isAgreed) {
+      console.warn("[Hero] TOS not agreed");
       toast({ title: 'Terms of Service', description: 'You must agree to the Terms of Service before splitting.', variant: 'destructive' });
       return;
     }
@@ -135,11 +160,18 @@ export function HeroSection() {
     }, 1000);
 
     try {
-      await addAudioFile(selectedFile, tosAgreed, selectedStems);
+      await addAudioFile(selectedFile, isAgreed, selectedStems);
+
+      // Notify speech control if this was a voice-initiated split
+      if (triggeredByVoiceRef.current) {
+        window.dispatchEvent(new CustomEvent('voice-split-success'));
+        triggeredByVoiceRef.current = false;
+      }
       setUploadProgress(100);
       toast({ title: 'Success', description: 'Audio file analyzed and added to library.' });
       setSelectedFile(null); // Clear selection on success
     } catch (err) {
+      console.error("[Hero] addAudioFile failed:", err);
       const msg = err instanceof Error ? err.message : String(err);
       toast({ title: 'Error', description: msg, variant: 'destructive' });
     } finally {
@@ -235,7 +267,7 @@ export function HeroSection() {
                   {/* Analyze Button */}
                   <Button
                     id="analyze-button"
-                    onClick={handleAnalyze}
+                    onClick={() => handleAnalyze()}
                     disabled={!selectedFile || uploadLoading || (!tosAgreed && !!selectedFile) || selectedStems.length === 0}
                     size="lg"
                     className={cn(
@@ -413,6 +445,20 @@ export function HeroSection() {
                               Do not upload illegal, harmful, or offensive content. We reserve the right to terminate services for violations.
                             </p>
                           </div>
+                          <DialogFooter className="sm:justify-start mt-6">
+                            <Button
+                              type="button"
+                              className="bg-primary hover:bg-primary/90 font-bold"
+                              onClick={handleTosAgree}
+                            >
+                              I Agree
+                            </Button>
+                            <DialogClose asChild>
+                              <Button type="button" variant="secondary">
+                                Close
+                              </Button>
+                            </DialogClose>
+                          </DialogFooter>
                         </DialogContent>
                       </Dialog>
                     </div>

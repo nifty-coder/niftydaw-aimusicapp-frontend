@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MusicSidebar } from "@/components/sidebar/MusicSidebar";
 import { HeroSection } from "@/components/hero/HeroSection";
 import { UserProfile } from "@/components/auth/UserProfile";
@@ -8,6 +8,17 @@ import { Menu } from "lucide-react";
 
 const Index = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenSidebar = () => {
+      setSidebarOpen(true);
+    };
+
+    window.addEventListener('open-sidebar', handleOpenSidebar);
+    return () => {
+      window.removeEventListener('open-sidebar', handleOpenSidebar);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-hero flex">
